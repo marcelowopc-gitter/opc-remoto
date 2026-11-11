@@ -1,0 +1,249 @@
+# ============================================================================
+# RustDesk personalizado - Windows x64 (portátil) com servidor e key embutidos
+#
+# Baseado no job "build-for-windows-flutter" do flutter-build.yml oficial da
+# tag 1.5.3, reduzido a Windows x64, sem assinatura, sem MSI e sem release.
+#
+# USO (no fork):
+#   1. Crie um branch a partir da tag da versão (ex.: custom-1.5.3 a partir de 1.5.3)
+#   2. Coloque este arquivo em .github/workflows/ NESSE branch
+#   3. Actions -> "RustDesk personalizado (Windows x64)" -> Run workflow
+#      (selecione o branch custom-1.5.3) e cole a key PÚBLICA do servidor
+#   4. Baixe o artifact "rustdesk-personalizado-windows-x64"
+#
+# A key é conferida pelo SHA-256 antes do build: se houver erro de digitação
+# (ex.: letra O no lugar do número 0) o workflow falha logo no início.
+# ============================================================================
+name: RustDesk personalizado (Windows x64)
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Servidor de ID/relay (hbbs/hbbr)"
+        required: true
+        default: "hcy0887ak5r.sn.mynetname.net"
+        type: string
+      key:
+        description: "Key PÚBLICA do servidor (conteúdo de id_ed25519.pub)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # valores copiados do flutter-build.yml da tag 1.5.3
+  SCITER_RUST_VERSION: "1.75"
+  LLVM_VERSION: "15.0.6"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  VERSION: "1.5.3"
+  # SHA-256 da key pública esperada (mesmo valor conferido no servidor)
+  EXPECTED_KEY_SHA256: "ccb9a4de382a5ac5fc7d9944c487b4798a5e9a7a6127a4a51aeee962772cbf6d"
+
+jobs:
+  validate-inputs:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Conferir host e key
+        env:
+          IN_HOST: ${{ inputs.host }}
+          IN_KEY: ${{ inputs.key }}
+        run: |
+          set -euo pipefail
+          KEY="$(printf '%s' "$IN_KEY" | tr -d ' \r\n')"
+          [[ "$IN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::host inválido"; exit 1; }
+          [[ "$KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "::error::formato de key inválido"; exit 1; }
+          GOT="$(printf '%s' "$KEY" | sha256sum | cut -d' ' -f1)"
+          if [[ "$GOT" != "$EXPECTED_KEY_SHA256" ]]; then
+            echo "::error::SHA-256 da key não confere (${GOT:0:12}...). Copie a key do arquivo, não digite."
+            exit 1
+          fi
+          echo "host e key conferidos (key sha256 ${GOT:0:12}...)"
+
+  generate-bridge:
+    needs: [validate-inputs]
+    uses: ./.github/workflows/bridge.yml
+
+  build-RustDeskTempTopMostWindow:
+    needs: [validate-inputs]
+    uses: ./.github/workflows/third-party-RustDeskTempTopMostWindow.yml
+    with:
+      upload-artifact: true
+      target: windows-2022
+      configuration: Release
+      platform: x64
+      target_version: Windows10
+
+  build-windows-x64:
+    name: windows-x64-personalizado
+    needs: [build-RustDeskTempTopMostWindow, generate-bridge]
+    runs-on: windows-2022
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      VCPKG_TRIPLET: x64-windows-static
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      # ---- PERSONALIZAÇÃO: servidor e key embutidos ---------------------------
+      - name: Embutir servidor e key (hbb_common/src/config.rs)
+        shell: bash
+        env:
+          IN_HOST: ${{ inputs.host }}
+          IN_KEY: ${{ inputs.key }}
+        run: |
+          set -euo pipefail
+          F=libs/hbb_common/src/config.rs
+          KEY="$(printf '%s' "$IN_KEY" | tr -d ' \r\n')"
+          grep -q '^pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["rs-ny.rustdesk.com"\];$' "$F" \
+            || { echo "::error::linha RENDEZVOUS_SERVERS não encontrada (versão diferente?)"; exit 1; }
+          grep -q '^pub const RS_PUB_KEY: &str = ".*";$' "$F" \
+            || { echo "::error::linha RS_PUB_KEY não encontrada (versão diferente?)"; exit 1; }
+          sed -i -E "s|^pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[\"rs-ny.rustdesk.com\"\];$|pub const RENDEZVOUS_SERVERS: \&[\&str] = \&[\"${IN_HOST}\"];|" "$F"
+          sed -i -E "s|^pub const RS_PUB_KEY: &str = \".*\";$|pub const RS_PUB_KEY: \&str = \"${KEY}\";|" "$F"
+          grep -n '^pub const RENDEZVOUS_SERVERS' "$F"
+          GOT="$(sed -n 's/^pub const RS_PUB_KEY: &str = "\(.*\)";$/\1/p' "$F" | tr -d '\r')"
+          [[ "$(printf '%s' "$GOT" | sha256sum | cut -d' ' -f1)" == "$EXPECTED_KEY_SHA256" ]] \
+            || { echo "::error::key gravada no código não confere"; exit 1; }
+          grep -q "\"${IN_HOST}\"" "$F" || { echo "::error::host não gravado"; exit 1; }
+          echo "config.rs personalizado (host ${IN_HOST}, key conferida)"
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2.0.9
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install flutter
+        uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225 # v2.12.0
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          architecture: x64
+
+      - name: Replace engine with rustdesk custom flutter engine
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+      - name: Patch flutter
+        shell: bash
+        run: |
+          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))
+          cd $(dirname $(dirname $(which flutter)))
+          if [[ "3.24.5" == ${{ env.FLUTTER_VERSION }} ]]; then
+            git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+          fi
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.SCITER_RUST_VERSION }}
+          targets: ${{ env.TARGET }}
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: windows-2022
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: ${{ env.VCPKG_TRIPLET }}
+        shell: bash
+        run: |
+          if ! $VCPKG_ROOT/vcpkg install --triplet ${{ env.VCPKG_TRIPLET }} --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do echo "$_1:"; cat "$_1"; done
+            exit 1
+          fi
+
+      - name: Build rustdesk
+        run: |
+          python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+          mv ./flutter/build/windows/x64/runner/Release ./rustdesk
+
+          Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
+          Expand-Archive usbmmidd_v2.zip -DestinationPath .
+          Remove-Item -Path usbmmidd_v2\Win32 -Recurse
+          Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
+          mv -Force .\usbmmidd_v2 ./rustdesk
+
+          try {
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/printer_driver_adapter.zip -OutFile printer_driver_adapter.zip
+            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/sha256sums -OutFile sha256sums
+            $checksum_driver = (Select-String -Path .\sha256sums -Pattern '^([a-fA-F0-9]{64}) \*rustdesk_printer_driver_v4-1.4\.zip$').Matches.Groups[1].Value
+            $downloadsum_driver = Get-FileHash -Path rustdesk_printer_driver_v4-1.4.zip -Algorithm SHA256
+            $checksum_adapter = (Select-String -Path .\sha256sums -Pattern '^([a-fA-F0-9]{64}) \*printer_driver_adapter\.zip$').Matches.Groups[1].Value
+            $downloadsum_adapter = Get-FileHash -Path printer_driver_adapter.zip -Algorithm SHA256
+            if ($checksum_driver -eq $downloadsum_driver.Hash -and $checksum_adapter -eq $downloadsum_adapter.Hash) {
+              Expand-Archive rustdesk_printer_driver_v4-1.4.zip -DestinationPath .
+              mkdir ./rustdesk/drivers
+              mv -Force .\rustdesk_printer_driver_v4-1.4 ./rustdesk/drivers/RustDeskPrinterDriver
+              Expand-Archive printer_driver_adapter.zip -DestinationPath .
+              mv -Force .\printer_driver_adapter.dll ./rustdesk
+            } else {
+              Write-Output "driver de impressora: checksum não confere, ignorado"
+            }
+          } catch {
+            Write-Host "driver de impressora: erro ignorado"
+          }
+
+      - name: find Runner.res
+        continue-on-error: true
+        shell: bash
+        run: |
+          runner_res=$(find . -name "Runner.res");
+          if [ -n "$runner_res" ]; then cp $runner_res ./libs/portable/Runner.res; fi
+
+      - name: Download RustDeskTempTopMostWindow artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: topmostwindow-artifacts-x64
+          path: "./rustdesk"
+
+      - name: Build self-extracted executable
+        shell: bash
+        run: |
+          sed -i '/dpiAware/d' res/manifest.xml
+          pushd ./libs/portable
+          pip3 install -r requirements.txt
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          popd
+          mkdir -p ./SaidaPersonalizada
+          mv ./target/release/rustdesk-portable-packer.exe ./SaidaPersonalizada/rustdesk-${{ env.VERSION }}-x86_64-personalizado.exe
+          cd ./SaidaPersonalizada && sha256sum *.exe | tee SHA256SUMS.txt
+
+      - name: Upload executável personalizado
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rustdesk-personalizado-windows-x64
+          path: ./SaidaPersonalizada
+          if-no-files-found: error
+          retention-days: 14

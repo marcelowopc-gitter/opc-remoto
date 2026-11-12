@@ -1,5 +1,5 @@
 # ============================================================================
-# RustDesk personalizado - Windows x64 (portátil) com servidor e key embutidos
+# OPC Remoto - Windows x64 (portátil) com servidor e key embutidos
 #
 # Baseado no job "build-for-windows-flutter" do flutter-build.yml oficial da
 # tag 1.5.3, reduzido a Windows x64, sem assinatura, sem MSI e sem release.
@@ -7,14 +7,14 @@
 # USO (no fork):
 #   1. Crie um branch a partir da tag da versão (ex.: custom-1.5.3 a partir de 1.5.3)
 #   2. Coloque este arquivo em .github/workflows/ NESSE branch
-#   3. Actions -> "RustDesk personalizado (Windows x64)" -> Run workflow
+#   3. Actions -> "OPC Remoto (Windows x64)" -> Run workflow
 #      (selecione o branch custom-1.5.3) e cole a key PÚBLICA do servidor
-#   4. Baixe o artifact "rustdesk-personalizado-windows-x64"
+#   4. Baixe o artifact "opc-remoto-windows-x64"
 #
 # A key é conferida pelo SHA-256 antes do build: se houver erro de digitação
 # (ex.: letra O no lugar do número 0) o workflow falha logo no início.
 # ============================================================================
-name: RustDesk personalizado (Windows x64)
+name: OPC Remoto (Windows x64)
 
 on:
   workflow_dispatch:
@@ -25,11 +25,12 @@ on:
         default: "hcy0887ak5r.sn.mynetname.net"
         type: string
       key:
-        description: "Key PÚBLICA do servidor (conteúdo de id_ed25519.pub)"
+        description: "Key PÚBLICA do servidor (conteúdo de id_ed25519.pub; o padrão já é a key atual)"
         required: true
+        default: "1meVSoScVQVPchUgDk1soBa5l3Os4iDoyBWvmpAdaFE="
         type: string
       marca:
-        description: "Aplicar marca Suporte OPC (branding/)"
+        description: "Aplicar marca OPC Remoto e travas de segurança (branding/)"
         required: false
         default: true
         type: boolean
@@ -125,7 +126,7 @@ jobs:
           grep -q "\"${IN_HOST}\"" "$F" || { echo "::error::host não gravado"; exit 1; }
           echo "config.rs personalizado (host ${IN_HOST}, key conferida)"
 
-      # ---- PERSONALIZAÇÃO: marca Suporte OPC (nome, ícones, cores, Rede oculta)
+      # ---- PERSONALIZAÇÃO: marca OPC Remoto (nome, ícones, cores, travas de segurança)
       # Tudo fica em branding/ no repositório; mudar a marca não exige editar este arquivo.
       - name: Aplicar marca (branding/apply.sh)
         if: ${{ inputs.marca }}
@@ -265,7 +266,7 @@ jobs:
       - name: Upload executável personalizado
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: rustdesk-personalizado-windows-x64
+          name: opc-remoto-windows-x64
           path: ./SaidaPersonalizada
           if-no-files-found: error
           retention-days: 14

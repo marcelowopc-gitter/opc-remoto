@@ -8,7 +8,9 @@ Arquivos usados pelo workflow `rustdesk-custom-windows.yml` (opção "Aplicar ma
   conferida; se o código mudar, o build falha cedo.
   Segurança forçada (o usuário não altera): só senha temporária, tela de
   Segurança oculta, túnel TCP desligado, sessão ociosa cai em 15 min, aceite por
-  senha ou clique, instalação como serviço bloqueada (só portátil).
+  senha ou clique, instalação como serviço bloqueada (só portátil), login/conta
+  desligado, ID fixo, terminal remoto, câmera, impressora remota e descoberta
+  na rede local desligados.
 - `gen_brand.py` - desenha o ícone e gera logos e a imagem da tela de extração.
 - `logo-opcao-telecom.png.b64` - logo Opção Telecom (PNG em base64, SHA-256 conferido).
 

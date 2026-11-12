@@ -15,13 +15,29 @@
 #   - título fixo da aba, legenda de mensagens do Windows
 #   - ícones, logo, tela de extração, cor de destaque, metadados do exe
 #
+#
+# Variante (variável VARIANTE, padrão "cliente"):
+#   cliente - app público do site: SÓ RECEBE conexões (sem "conectar a outro
+#             ID"); quem baixar não consegue usar para acessar outra máquina.
+#             Identidade em app.env.
+#   tecnico - app interno do NOC: SÓ CONECTA (a máquina do técnico não pode ser
+#             acessada) e grava toda sessão automaticamente (pasta Vídeos).
+#             Identidade em app-tecnico.env. NÃO publicar no site.
+#
 # Requer: python3 com Pillow (instalado aqui via pip se faltar).
 # ============================================================================
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VARIANTE="${VARIANTE:-cliente}"
+case "$VARIANTE" in
+  cliente) ENV_FILE="$HERE/app.env";         CONN_TYPE="incoming" ;;
+  tecnico) ENV_FILE="$HERE/app-tecnico.env"; CONN_TYPE="outgoing" ;;
+  *) echo "::error::branding: VARIANTE inválida: $VARIANTE (use cliente ou tecnico)"; exit 1 ;;
+esac
 # shellcheck source=/dev/null
-source "$HERE/app.env"
+source "$ENV_FILE"
+echo "variante: $VARIANTE (conn-type=$CONN_TYPE, $(basename "$ENV_FILE"))"
 ACCENT="0A46A6"          # azul Opção para botões/destaques
 SPLASH_BG="0, 19, 75"    # #00134B (marinho do site)
 LOGO_SHA256="855e6b16d7b90e646b8d6ab012d5aeae93311e4ae0760cc13cb4d528905f1ce6"
@@ -66,13 +82,20 @@ replace_text "$F" \
 #   - instalação como serviço bloqueada (só modo portátil)
 #   - login/conta desligado (aba Conta, botão Login, catálogo, grupos)
 #   - ID não pode ser trocado pelo usuário
+#   - tipo de conexão fixo pela variante (cliente só recebe, técnico só conecta)
+#   - técnico: gravação automática de toda sessão de saída
 IDLE_MIN=15
 replace_text "$F" \
   'pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
   "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
 replace_text "$F" \
   'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
-  'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([("disable-installation", "Y"), ("disable-account", "Y")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());'
+  "pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"disable-installation\", \"Y\"), (\"disable-account\", \"Y\"), (\"conn-type\", \"${CONN_TYPE}\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
+if [[ "$VARIANTE" == "tecnico" ]]; then
+  replace_text "$F" \
+    'pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
+    'pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([("allow-auto-record-outgoing", "Y")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());'
+fi
 
 echo "== 2/6 textos fixos na interface"
 F=flutter/lib/desktop/pages/desktop_setting_page.dart
@@ -141,8 +164,12 @@ grep -q '"verification-method", "use-temporary-password"' libs/hbb_common/src/co
 grep -q '"disable-installation", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS"
 grep -q '"disable-account", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS (login)"
 grep -q '"enable-terminal", "N"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (terminal)"
+grep -q "\"conn-type\", \"${CONN_TYPE}\"" libs/hbb_common/src/config.rs || die "HARD_SETTINGS (conn-type)"
+if [[ "$VARIANTE" == "tecnico" ]]; then
+  grep -q '"allow-auto-record-outgoing", "Y"' libs/hbb_common/src/config.rs || die "OVERWRITE_LOCAL_SETTINGS (gravação)"
+fi
 ! grep -q "rustdesk.com" flutter/lib/desktop/pages/desktop_setting_page.dart || die "link rustdesk.com restante na tela Sobre"
 for f in res/icon.ico flutter/windows/runner/resources/app_icon.ico flutter/assets/logo.png libs/portable/src/res/label.png; do
   [[ -s "$f" ]] || die "arquivo vazio: $f"
 done
-echo "marca ${PRODUCT} aplicada (app ${APP_NAME}, exe ${EXE_NAME})"
+echo "marca ${PRODUCT} aplicada (variante ${VARIANTE}, app ${APP_NAME}, exe ${EXE_NAME})"

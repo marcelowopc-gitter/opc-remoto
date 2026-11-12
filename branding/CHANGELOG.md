@@ -2,7 +2,16 @@
 
 Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`.
 
-## opc-1.5.3-r3 - 2026-11-12 (atual)
+## opc-1.5.3-r4 - (em teste)
+Base: RustDesk 1.5.3.
+- Dois apps no mesmo workflow (campo "variante"):
+  - **OPC Remoto** (cliente, site): só recebe conexões; não dá para usar o app
+    do site para acessar outro computador.
+  - **OPC Tecnico** (NOC, interno): só conecta; grava toda sessão
+    automaticamente. Não publicar no site.
+- Artifact do técnico: `opc-tecnico-windows-x64`.
+
+## opc-1.5.3-r3 - 2026-11-12
 Base: RustDesk 1.5.3. Commit `801daa7`.
 SHA-256: `6918a5334833ef1f2c3393381da2a95739d8cd4e32f4be0025de28ec895f8d20`
 - Login/conta desligado (aba Conta, botão Login, catálogo e grupos ocultos).

@@ -242,14 +242,24 @@ jobs:
 
       - name: Build self-extracted executable
         shell: bash
+        env:
+          MARCA: ${{ inputs.marca }}
         run: |
+          set -euo pipefail
           sed -i '/dpiAware/d' res/manifest.xml
+          EXE_NAME="rustdesk.exe"; OUT="rustdesk-${VERSION}-x86_64-personalizado"
+          # com marca: o executável interno ganha o nome do app (também vira a pasta de extração)
+          if [[ "$MARCA" == "true" && -f branding/app.env ]]; then
+            source branding/app.env
+            mv ./rustdesk/rustdesk.exe "./rustdesk/${EXE_NAME}"
+            OUT="${OUT_NAME}-${VERSION}"
+          fi
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e "../../rustdesk/${EXE_NAME}"
           popd
           mkdir -p ./SaidaPersonalizada
-          mv ./target/release/rustdesk-portable-packer.exe ./SaidaPersonalizada/rustdesk-${{ env.VERSION }}-x86_64-personalizado.exe
+          mv ./target/release/rustdesk-portable-packer.exe "./SaidaPersonalizada/${OUT}.exe"
           cd ./SaidaPersonalizada && sha256sum *.exe | tee SHA256SUMS.txt
 
       - name: Upload executável personalizado

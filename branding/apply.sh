@@ -56,7 +56,20 @@ replace_text "$F" \
   "pub static ref APP_NAME: RwLock<String> = RwLock::new(\"${APP_NAME}\".to_owned());"
 replace_text "$F" \
   'pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
-  'pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([("hide-network-settings", "Y"), ("hide-server-settings", "Y"), ("hide-proxy-settings", "Y"), ("hide-websocket-settings", "Y"), ("hide-help-cards", "Y"), ("hide-powered-by-me", "Y")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());'
+  'pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([("hide-network-settings", "Y"), ("hide-server-settings", "Y"), ("hide-proxy-settings", "Y"), ("hide-websocket-settings", "Y"), ("hide-help-cards", "Y"), ("hide-powered-by-me", "Y"), ("hide-security-settings", "Y"), ("disable-change-permanent-password", "Y")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());'
+# segurança (o usuário não consegue mudar):
+#   - só senha temporária: senha fixa salva é ignorada (sem acesso permanente)
+#   - túnel TCP desligado (sem encaminhar portas para a rede do cliente)
+#   - sessão ociosa cai em ${IDLE_MIN} min
+#   - aceite por senha ou por clique do cliente
+#   - instalação como serviço bloqueada (só modo portátil)
+IDLE_MIN=15
+replace_text "$F" \
+  'pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
+  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
+replace_text "$F" \
+  'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
+  'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([("disable-installation", "Y")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());'
 
 echo "== 2/6 textos fixos na interface"
 F=flutter/lib/desktop/pages/desktop_setting_page.dart
@@ -120,7 +133,9 @@ rm -rf "$WORK"
 
 echo "== 6/6 conferência"
 grep -q "RwLock::new(\"${APP_NAME}\"" libs/hbb_common/src/config.rs || die "APP_NAME"
-grep -q '"hide-powered-by-me", "Y"' libs/hbb_common/src/config.rs || die "BUILTIN_SETTINGS"
+grep -q '"hide-security-settings", "Y"' libs/hbb_common/src/config.rs || die "BUILTIN_SETTINGS"
+grep -q '"verification-method", "use-temporary-password"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS"
+grep -q '"disable-installation", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS"
 ! grep -q "rustdesk.com" flutter/lib/desktop/pages/desktop_setting_page.dart || die "link rustdesk.com restante na tela Sobre"
 for f in res/icon.ico flutter/windows/runner/resources/app_icon.ico flutter/assets/logo.png libs/portable/src/res/label.png; do
   [[ -s "$f" ]] || die "arquivo vazio: $f"

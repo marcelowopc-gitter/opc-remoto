@@ -9,16 +9,28 @@
 #   2. Coloque este arquivo em .github/workflows/ NESSE branch
 #   3. Actions -> "OPC Remoto (Windows x64)" -> Run workflow
 #      (selecione o branch custom-1.5.3) e cole a key PÚBLICA do servidor
-#   4. Baixe o artifact "opc-remoto-windows-x64"
+#   4. Escolha a variante: "cliente" (app do site, só recebe conexões) ou
+#      "tecnico" (app interno do NOC, só conecta e grava as sessões)
+#   5. Baixe o artifact "opc-remoto-windows-x64" (cliente) ou
+#      "opc-tecnico-windows-x64" (técnico; não publicar no site)
 #
 # A key é conferida pelo SHA-256 antes do build: se houver erro de digitação
 # (ex.: letra O no lugar do número 0) o workflow falha logo no início.
 # ============================================================================
 name: OPC Remoto (Windows x64)
+run-name: "OPC ${{ inputs.variante }} (${{ github.ref_name }})"
 
 on:
   workflow_dispatch:
     inputs:
+      variante:
+        description: "Qual app gerar: cliente (site, só recebe) ou tecnico (NOC, só conecta e grava)"
+        required: true
+        default: "cliente"
+        type: choice
+        options:
+          - cliente
+          - tecnico
       host:
         description: "Servidor de ID/relay (hbbs/hbbr)"
         required: true
@@ -131,6 +143,8 @@ jobs:
       - name: Aplicar marca (branding/apply.sh)
         if: ${{ inputs.marca }}
         shell: bash
+        env:
+          VARIANTE: ${{ inputs.variante }}
         run: bash branding/apply.sh
 
       - name: Restore bridge files
@@ -245,16 +259,25 @@ jobs:
         shell: bash
         env:
           MARCA: ${{ inputs.marca }}
+          VARIANTE: ${{ inputs.variante }}
         run: |
           set -euo pipefail
           sed -i '/dpiAware/d' res/manifest.xml
           EXE_NAME="rustdesk.exe"; OUT="rustdesk-${VERSION}-x86_64-personalizado"
+          ARTIFACT="rustdesk-personalizado-windows-x64"
           # com marca: o executável interno ganha o nome do app (também vira a pasta de extração)
-          if [[ "$MARCA" == "true" && -f branding/app.env ]]; then
-            source branding/app.env
+          if [[ "$MARCA" == "true" ]]; then
+            case "$VARIANTE" in
+              cliente) ENVF=branding/app.env ;;
+              tecnico) ENVF=branding/app-tecnico.env ;;
+              *) echo "::error::variante inválida"; exit 1 ;;
+            esac
+            source "$ENVF"
             mv ./rustdesk/rustdesk.exe "./rustdesk/${EXE_NAME}"
             OUT="${OUT_NAME}-${VERSION}"
+            ARTIFACT="${OUT_NAME}-windows-x64"
           fi
+          echo "ARTIFACT=${ARTIFACT}" >> "$GITHUB_ENV"
           pushd ./libs/portable
           pip3 install -r requirements.txt
           python3 ./generate.py -f ../../rustdesk/ -o . -e "../../rustdesk/${EXE_NAME}"
@@ -266,7 +289,7 @@ jobs:
       - name: Upload executável personalizado
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: opc-remoto-windows-x64
+          name: ${{ env.ARTIFACT }}
           path: ./SaidaPersonalizada
           if-no-files-found: error
           retention-days: 14

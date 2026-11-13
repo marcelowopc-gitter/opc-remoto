@@ -84,10 +84,18 @@ replace_text "$F" \
 #   - ID não pode ser trocado pelo usuário
 #   - tipo de conexão fixo pela variante (cliente só recebe, técnico só conecta)
 #   - técnico: gravação automática de toda sessão de saída
+#   - cliente: só aceita conexões vindas dos IPs de WHITELIST (app.env), ex.: o
+#     IP de saída do NOC/VPN. Vale também via relay (o IP checado é o do técnico).
 IDLE_MIN=15
+WL_ITEM=""
+if [[ "$VARIANTE" == "cliente" && -n "${WHITELIST:-}" ]]; then
+  # só IPv4/IPv6 com máscara opcional, separados por vírgula
+  [[ "$WHITELIST" =~ ^[0-9A-Fa-f:./]+(,[0-9A-Fa-f:./]+)*$ ]] || die "WHITELIST inválida: $WHITELIST"
+  WL_ITEM=", (\"whitelist\", \"${WHITELIST}\")"
+fi
 replace_text "$F" \
   'pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
-  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
+  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")${WL_ITEM}].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
 replace_text "$F" \
   'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
   "pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"disable-installation\", \"Y\"), (\"disable-account\", \"Y\"), (\"conn-type\", \"${CONN_TYPE}\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
@@ -164,6 +172,10 @@ grep -q '"verification-method", "use-temporary-password"' libs/hbb_common/src/co
 grep -q '"disable-installation", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS"
 grep -q '"disable-account", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS (login)"
 grep -q '"enable-terminal", "N"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (terminal)"
+if [[ -n "$WL_ITEM" ]]; then
+  grep -qF "(\"whitelist\", \"${WHITELIST}\")" libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (whitelist)"
+  echo "whitelist: ${WHITELIST}"
+fi
 grep -q "\"conn-type\", \"${CONN_TYPE}\"" libs/hbb_common/src/config.rs || die "HARD_SETTINGS (conn-type)"
 if [[ "$VARIANTE" == "tecnico" ]]; then
   grep -q '"allow-auto-record-outgoing", "Y"' libs/hbb_common/src/config.rs || die "OVERWRITE_LOCAL_SETTINGS (gravação)"

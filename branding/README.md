@@ -11,7 +11,9 @@ O workflow gera um de dois apps, escolhido no campo **variante**:
 Assim, quem baixar o app do site não consegue usá-lo para acessar outro
 computador, e a máquina do técnico não pode ser acessada por ninguém.
 
-- `app.env` - nome, executável, empresa e links do app do cliente.
+- `app.env` - nome, executável, empresa e links do app do cliente, e a
+  `WHITELIST`: IPs de onde o técnico pode conectar (saída do NOC/VPN). Conexão
+  vinda de outro IP é recusada, mesmo com ID e senha certos.
 - `app-tecnico.env` - o mesmo para o app do técnico (nome próprio: config e
   pasta separadas, os dois podem rodar na mesma máquina).
 - `apply.sh` - aplica nome, oculta telas de Rede/Servidor/Proxy, ajusta a tela

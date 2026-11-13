@@ -78,7 +78,8 @@ replace_text "$F" \
 #   - túnel TCP desligado (sem encaminhar portas para a rede do cliente)
 #   - sessão ociosa cai em ${IDLE_MIN} min
 #   - aceite por senha ou por clique do cliente
-#   - terminal remoto, câmera, impressora remota e descoberta na LAN desligados
+#   - terminal remoto (PowerShell/cmd) LIGADO; modo privacidade (tela preta no
+#     cliente), câmera, impressora remota e descoberta na LAN desligados
 #   - instalação como serviço bloqueada (só modo portátil)
 #   - login/conta desligado (aba Conta, botão Login, catálogo, grupos)
 #   - ID não pode ser trocado pelo usuário
@@ -95,7 +96,7 @@ if [[ "$VARIANTE" == "cliente" && -n "${WHITELIST:-}" ]]; then
 fi
 replace_text "$F" \
   'pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
-  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")${WL_ITEM}].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
+  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"Y\"), (\"enable-privacy-mode\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")${WL_ITEM}].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
 replace_text "$F" \
   'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
   "pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"disable-installation\", \"Y\"), (\"disable-account\", \"Y\"), (\"conn-type\", \"${CONN_TYPE}\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
@@ -171,7 +172,8 @@ grep -q '"hide-security-settings", "Y"' libs/hbb_common/src/config.rs || die "BU
 grep -q '"verification-method", "use-temporary-password"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS"
 grep -q '"disable-installation", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS"
 grep -q '"disable-account", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS (login)"
-grep -q '"enable-terminal", "N"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (terminal)"
+grep -q '"enable-terminal", "Y"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (terminal)"
+grep -q '"enable-privacy-mode", "N"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (privacidade)"
 if [[ -n "$WL_ITEM" ]]; then
   grep -qF "(\"whitelist\", \"${WHITELIST}\")" libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (whitelist)"
   echo "whitelist: ${WHITELIST}"

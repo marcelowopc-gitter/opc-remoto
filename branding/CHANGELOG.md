@@ -2,7 +2,14 @@
 
 Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`.
 
-## opc-1.5.3-r5 - 2026-11-13 (atual)
+## opc-1.5.3-r6 - (em teste)
+Base: RustDesk 1.5.3. Só o app do cliente muda (técnico continua o r4).
+- Terminal remoto (PowerShell/cmd) LIGADO para o técnico.
+- Modo privacidade (tela preta no cliente) DESLIGADO: o cliente sempre vê a tela.
+- Mantidos: tela/teclado/mouse, arquivos, área de transferência, áudio, bloqueio
+  de teclado/mouse e reinício remoto. Whitelist do NOC continua.
+
+## opc-1.5.3-r5 - 2026-11-13
 Base: RustDesk 1.5.3. Commit `2a4c6ae`. Só o app do cliente muda (técnico continua o r4).
 SHA-256 (cliente, site): `ace8b6f4624e8ce5b4d28ca5932df2fa72d71b69bae97f7cb5e1614b2c482bba`
 - Whitelist: o OPC Remoto só aceita conexões vindas do IP de saída do NOC/VPN

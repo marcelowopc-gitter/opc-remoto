@@ -23,8 +23,11 @@ computador, e a máquina do técnico não pode ser acessada por ninguém.
   Segurança forçada (o usuário não altera): só senha temporária, tela de
   Segurança oculta, túnel TCP desligado, sessão ociosa cai em 15 min, aceite por
   senha ou clique, instalação como serviço bloqueada (só portátil), login/conta
-  desligado, ID fixo, terminal remoto, câmera, impressora remota e descoberta
-  na rede local desligados, tipo de conexão fixo pela variante.
+  desligado, ID fixo, modo privacidade (tela preta no cliente), câmera,
+  impressora remota e descoberta na rede local desligados, tipo de conexão fixo
+  pela variante. Ligados para o técnico: tela/teclado/mouse, terminal remoto
+  (PowerShell/cmd), transferência de arquivos, área de transferência, áudio,
+  bloqueio de teclado/mouse do cliente e reinício remoto.
 - `gen_brand.py` - desenha o ícone e gera logos e a imagem da tela de extração.
 - `logo-opcao-telecom.png.b64` - logo Opção Telecom (PNG em base64, SHA-256 conferido).
 - `CHANGELOG.md` - histórico das versões publicadas.

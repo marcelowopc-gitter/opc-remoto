@@ -2,8 +2,9 @@
 
 Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`.
 
-## opc-1.5.3-r5 - (em teste)
-Base: RustDesk 1.5.3. Só o app do cliente muda (técnico continua o r4).
+## opc-1.5.3-r5 - 2026-11-13 (atual)
+Base: RustDesk 1.5.3. Commit `2a4c6ae`. Só o app do cliente muda (técnico continua o r4).
+SHA-256 (cliente, site): `ace8b6f4624e8ce5b4d28ca5932df2fa72d71b69bae97f7cb5e1614b2c482bba`
 - Whitelist: o OPC Remoto só aceita conexões vindas do IP de saída do NOC/VPN
   (`WHITELIST` em app.env, hoje 187.86.63.2). De outra rede o técnico recebe
   "Your ip is blocked by the peer", mesmo com ID e senha certos.

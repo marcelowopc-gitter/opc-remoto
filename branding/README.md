@@ -25,7 +25,8 @@ computador, e a máquina do técnico não pode ser acessada por ninguém.
   senha ou clique, instalação como serviço bloqueada (só portátil), login/conta
   desligado, ID fixo, modo privacidade (tela preta no cliente), câmera,
   impressora remota e descoberta na rede local desligados, tipo de conexão fixo
-  pela variante. Ligados para o técnico: tela/teclado/mouse, terminal remoto
+  pela variante. No cliente, a senha temporária vale enquanto o app estiver
+  aberto (reabrir o app gera outra; 10 erros seguidos também). Ligados para o técnico: tela/teclado/mouse, terminal remoto
   (PowerShell/cmd), transferência de arquivos, área de transferência, áudio,
   bloqueio de teclado/mouse do cliente e reinício remoto.
 - `gen_brand.py` - desenha o ícone e gera logos e a imagem da tela de extração.

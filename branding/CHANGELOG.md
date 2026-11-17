@@ -2,7 +2,15 @@
 
 Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`.
 
-## opc-1.5.3-r6 - 2026-11-13 (atual)
+## opc-1.5.3-r7 - (em preparação)
+Base: RustDesk 1.5.3. Só o app do cliente muda (técnico continua o r4).
+- Senha temporária fixa enquanto o app estiver aberto: não troca mais a cada
+  acesso. Se a sessão cair (ociosidade de 15 min, rede), o técnico reconecta com
+  a mesma senha. Fechar e abrir o app gera senha nova. Continua trocando sozinha
+  após 10 senhas erradas seguidas, e o cliente pode trocar no botão de atualizar.
+  Whitelist do NOC continua.
+
+## opc-1.5.3-r6 - 2026-11-13
 Base: RustDesk 1.5.3. Commit `291dd11`. Só o app do cliente muda (técnico continua o r4).
 SHA-256 (cliente, site): `7f7a660f7ec7934bbde796380156666c68b86c7ff889398f2b04328250ab46dc`
 - Terminal remoto (PowerShell/cmd) LIGADO para o técnico.

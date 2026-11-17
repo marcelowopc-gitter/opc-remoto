@@ -85,6 +85,8 @@ replace_text "$F" \
 #   - ID não pode ser trocado pelo usuário
 #   - tipo de conexão fixo pela variante (cliente só recebe, técnico só conecta)
 #   - técnico: gravação automática de toda sessão de saída
+#   - cliente: senha temporária vale enquanto o app estiver aberto (não troca a
+#     cada acesso); fechar/reabrir o app gera senha nova
 #   - cliente: só aceita conexões vindas dos IPs de WHITELIST (app.env), ex.: o
 #     IP de saída do NOC/VPN. Vale também via relay (o IP checado é o do técnico).
 IDLE_MIN=15
@@ -104,6 +106,24 @@ if [[ "$VARIANTE" == "tecnico" ]]; then
   replace_text "$F" \
     'pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
     'pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([("allow-auto-record-outgoing", "Y")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());'
+fi
+# cliente: a senha temporária NÃO troca a cada acesso. Ela nasce quando o app
+# abre e só muda ao fechar/reabrir o app (ou após 10 senhas erradas seguidas,
+# proteção que continua no código). Assim o técnico reconecta com a mesma senha
+# se a sessão cair (ociosidade, rede); a whitelist do NOC segue valendo.
+if [[ "$VARIANTE" == "cliente" ]]; then
+  # o checkout no Windows pode vir com CRLF: casa \r?\n
+  python3 - src/server/connection.rs <<'PY' || die "troca falhou em src/server/connection.rs (senha temporária)"
+import re, sys
+p = sys.argv[1]
+data = open(p, encoding="utf-8", newline="").read()
+pat = r"password::update_temporary_password\(\);(\r?\n[ \t]*// Releases the budget)"
+data, n = re.subn(pat, r"// OPC: senha temporária só muda ao reabrir o app (ou após 10 erros seguidos).\1", data)
+if n != 1:
+    sys.exit(f"esperava 1 ocorrência, achei {n}")
+open(p, "w", encoding="utf-8", newline="").write(data)
+PY
+  echo "  ok  src/server/connection.rs"
 fi
 
 echo "== 2/6 textos fixos na interface"
@@ -181,6 +201,8 @@ fi
 grep -q "\"conn-type\", \"${CONN_TYPE}\"" libs/hbb_common/src/config.rs || die "HARD_SETTINGS (conn-type)"
 if [[ "$VARIANTE" == "tecnico" ]]; then
   grep -q '"allow-auto-record-outgoing", "Y"' libs/hbb_common/src/config.rs || die "OVERWRITE_LOCAL_SETTINGS (gravação)"
+else
+  grep -q 'OPC: senha temporária só muda ao reabrir' src/server/connection.rs || die "senha temporária fixa por execução"
 fi
 ! grep -q "rustdesk.com" flutter/lib/desktop/pages/desktop_setting_page.dart || die "link rustdesk.com restante na tela Sobre"
 for f in res/icon.ico flutter/windows/runner/resources/app_icon.ico flutter/assets/logo.png libs/portable/src/res/label.png; do

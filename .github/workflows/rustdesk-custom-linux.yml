@@ -11,9 +11,9 @@
 #   Artifact: opc-remoto-linux-x64 / opc-tecnico-linux-x64 (.deb + SHA256SUMS)
 #
 # Instalar: sudo apt install ./opc-remoto-1.5.3-amd64.deb
-# O pacote se chama "rustdesk" (caminhos fixos no código): substitui um
-# RustDesk oficial que estiver instalado, e cliente e técnico não convivem
-# na mesma máquina Linux.
+# Pacotes "opcremoto" (cliente) e "opctecnico" (técnico): nomes próprios, os
+# dois convivem na mesma máquina e não conflitam com um RustDesk oficial.
+# Cliente: acesso só com o app aberto (serviço não sobe no boot).
 # ============================================================================
 name: OPC Remoto (Linux x64)
 run-name: "OPC ${{ inputs.variante }} Linux (${{ github.ref_name }})"
@@ -248,10 +248,21 @@ jobs:
           mkdir -p SaidaPersonalizada
           DEB="SaidaPersonalizada/${OUT_NAME}-${VERSION}-amd64.deb"
           mv "rustdesk-${VERSION}.deb" "$DEB"
+          N="$(printf '%s' "$APP_NAME" | tr 'A-Z' 'a-z')"
           dpkg-deb -I "$DEB" | sed -n '1,20p'
+          [[ "$(dpkg-deb -f "$DEB" Package)" == "$N" ]] || { echo "::error::nome do pacote não é $N"; exit 1; }
           dpkg-deb -I "$DEB" | grep -q "Description: ${DESCRIPTION}" || { echo "::error::descrição do pacote sem a marca"; exit 1; }
-          dpkg-deb -c "$DEB" | grep -q 'usr/share/rustdesk/lib/librustdesk.so' || { echo "::error::librustdesk.so ausente no .deb"; exit 1; }
-          dpkg-deb --fsys-tarfile "$DEB" | tar -xO ./usr/share/applications/rustdesk.desktop | grep -qxF "Name=${PRODUCT}" || { echo "::error::atalho sem a marca"; exit 1; }
+          dpkg-deb -c "$DEB" > /tmp/conteudo.txt
+          grep -q "usr/share/${N}/lib/librustdesk.so" /tmp/conteudo.txt || { echo "::error::librustdesk.so ausente no .deb"; exit 1; }
+          grep -q "usr/share/${N}/${N}$" /tmp/conteudo.txt || { echo "::error::binário ${N} ausente no .deb"; exit 1; }
+          ! grep -q 'usr/share/rustdesk\|usr/bin/rustdesk' /tmp/conteudo.txt || { echo "::error::caminho rustdesk no .deb"; exit 1; }
+          dpkg-deb --fsys-tarfile "$DEB" | tar -xO "./usr/share/applications/${N}.desktop" | grep -qxF "Name=${PRODUCT}" || { echo "::error::atalho sem a marca"; exit 1; }
+          if [[ "$VARIANTE" == "cliente" ]]; then
+            for f in "usr/lib/systemd/system/${N}.path" "usr/lib/systemd/system/${N}-vigia.service" "usr/share/${N}/opc-abrir.sh" "usr/lib/tmpfiles.d/${N}.conf"; do
+              grep -q "$f" /tmp/conteudo.txt || { echo "::error::cliente: $f ausente no .deb"; exit 1; }
+            done
+          fi
+          awk '{print $2}' /tmp/conteudo.txt | sort | uniq -c
           echo "ARTIFACT=${OUT_NAME}-linux-x64" >> "$GITHUB_ENV"
           cd SaidaPersonalizada && sha256sum *.deb | tee SHA256SUMS.txt
 

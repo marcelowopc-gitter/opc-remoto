@@ -3,7 +3,8 @@
 #
 # Baseado no job "build-rustdesk-linux" do flutter-build.yml oficial da tag
 # 1.5.3, reduzido a x86_64 e só .deb (sem rpm, arch, appimage, flatpak).
-# Mesma marca e mesmas travas do Windows (branding/apply.sh).
+# Linha SEPARADA dos apps de Windows: usa branding/apply-linux.sh, que roda o
+# apply.sh sem alterações (mesmas travas) e só então ajusta o pacote Linux.
 #
 # USO: Actions -> "OPC Remoto (Linux x64)" -> Run workflow (branch custom-1.5.3)
 #   variante "cliente" (só recebe) ou "tecnico" (só conecta e grava)
@@ -122,11 +123,13 @@ jobs:
           grep -q "\"${IN_HOST}\"" "$F" || { echo "::error::host não gravado"; exit 1; }
           echo "config.rs personalizado (host ${IN_HOST}, key conferida)"
 
-      # ---- PERSONALIZAÇÃO: marca e travas (mesmo script do Windows) -----------
-      - name: Aplicar marca (branding/apply.sh)
+      # ---- PERSONALIZAÇÃO: marca e travas ---------------------------------------
+      # apply-linux.sh roda o apply.sh (mesmas travas do Windows, sem alterá-lo)
+      # e depois troca só o que existe no pacote Linux.
+      - name: Aplicar marca Linux (branding/apply-linux.sh)
         env:
           VARIANTE: ${{ inputs.variante }}
-        run: bash branding/apply.sh
+        run: bash branding/apply-linux.sh
 
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@49819abfb41bd9b44fb781159c033dba90353a7c # v1.0

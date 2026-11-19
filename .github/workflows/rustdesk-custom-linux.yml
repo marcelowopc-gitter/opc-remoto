@@ -1,0 +1,261 @@
+# ============================================================================
+# OPC Remoto - Linux x64 (.deb para Ubuntu/Debian) com servidor e key embutidos
+#
+# Baseado no job "build-rustdesk-linux" do flutter-build.yml oficial da tag
+# 1.5.3, reduzido a x86_64 e só .deb (sem rpm, arch, appimage, flatpak).
+# Mesma marca e mesmas travas do Windows (branding/apply.sh).
+#
+# USO: Actions -> "OPC Remoto (Linux x64)" -> Run workflow (branch custom-1.5.3)
+#   variante "cliente" (só recebe) ou "tecnico" (só conecta e grava)
+#   Artifact: opc-remoto-linux-x64 / opc-tecnico-linux-x64 (.deb + SHA256SUMS)
+#
+# Instalar: sudo apt install ./opc-remoto-1.5.3-amd64.deb
+# O pacote se chama "rustdesk" (caminhos fixos no código): substitui um
+# RustDesk oficial que estiver instalado, e cliente e técnico não convivem
+# na mesma máquina Linux.
+# ============================================================================
+name: OPC Remoto (Linux x64)
+run-name: "OPC ${{ inputs.variante }} Linux (${{ github.ref_name }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      variante:
+        description: "Qual app gerar: cliente (só recebe) ou tecnico (NOC, só conecta e grava)"
+        required: true
+        default: "cliente"
+        type: choice
+        options:
+          - cliente
+          - tecnico
+      host:
+        description: "Servidor de ID/relay (hbbs/hbbr)"
+        required: true
+        default: "hcy0887ak5r.sn.mynetname.net"
+        type: string
+      key:
+        description: "Key PÚBLICA do servidor (conteúdo de id_ed25519.pub; o padrão já é a key atual)"
+        required: true
+        default: "1meVSoScVQVPchUgDk1soBa5l3Os4iDoyBWvmpAdaFE="
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # valores copiados do flutter-build.yml da tag 1.5.3
+  RUST_VERSION: "1.75"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  VERSION: "1.5.3"
+  EXPECTED_KEY_SHA256: "ccb9a4de382a5ac5fc7d9944c487b4798a5e9a7a6127a4a51aeee962772cbf6d"
+
+jobs:
+  validate-inputs:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Conferir host e key
+        env:
+          IN_HOST: ${{ inputs.host }}
+          IN_KEY: ${{ inputs.key }}
+        run: |
+          set -euo pipefail
+          KEY="$(printf '%s' "$IN_KEY" | tr -d ' \r\n')"
+          [[ "$IN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::host inválido"; exit 1; }
+          [[ "$KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "::error::formato de key inválido"; exit 1; }
+          GOT="$(printf '%s' "$KEY" | sha256sum | cut -d' ' -f1)"
+          if [[ "$GOT" != "$EXPECTED_KEY_SHA256" ]]; then
+            echo "::error::SHA-256 da key não confere (${GOT:0:12}...). Copie a key do arquivo, não digite."
+            exit 1
+          fi
+          echo "host e key conferidos (key sha256 ${GOT:0:12}...)"
+
+  generate-bridge:
+    needs: [validate-inputs]
+    uses: ./.github/workflows/bridge.yml
+
+  build-linux-x64:
+    name: linux-x64-personalizado
+    needs: [generate-bridge]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Maximize build space
+        run: |
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo apt-get update -y
+          sudo apt-get install -y nasm qemu-user-static
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      # ---- PERSONALIZAÇÃO: servidor e key embutidos ---------------------------
+      - name: Embutir servidor e key (hbb_common/src/config.rs)
+        env:
+          IN_HOST: ${{ inputs.host }}
+          IN_KEY: ${{ inputs.key }}
+        run: |
+          set -euo pipefail
+          F=libs/hbb_common/src/config.rs
+          KEY="$(printf '%s' "$IN_KEY" | tr -d ' \r\n')"
+          grep -q '^pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["rs-ny.rustdesk.com"\];$' "$F" \
+            || { echo "::error::linha RENDEZVOUS_SERVERS não encontrada (versão diferente?)"; exit 1; }
+          grep -q '^pub const RS_PUB_KEY: &str = ".*";$' "$F" \
+            || { echo "::error::linha RS_PUB_KEY não encontrada (versão diferente?)"; exit 1; }
+          sed -i -E "s|^pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[\"rs-ny.rustdesk.com\"\];$|pub const RENDEZVOUS_SERVERS: \&[\&str] = \&[\"${IN_HOST}\"];|" "$F"
+          sed -i -E "s|^pub const RS_PUB_KEY: &str = \".*\";$|pub const RS_PUB_KEY: \&str = \"${KEY}\";|" "$F"
+          grep -n '^pub const RENDEZVOUS_SERVERS' "$F"
+          GOT="$(sed -n 's/^pub const RS_PUB_KEY: &str = "\(.*\)";$/\1/p' "$F" | tr -d '\r')"
+          [[ "$(printf '%s' "$GOT" | sha256sum | cut -d' ' -f1)" == "$EXPECTED_KEY_SHA256" ]] \
+            || { echo "::error::key gravada no código não confere"; exit 1; }
+          grep -q "\"${IN_HOST}\"" "$F" || { echo "::error::host não gravado"; exit 1; }
+          echo "config.rs personalizado (host ${IN_HOST}, key conferida)"
+
+      # ---- PERSONALIZAÇÃO: marca e travas (mesmo script do Windows) -----------
+      - name: Aplicar marca (branding/apply.sh)
+        env:
+          VARIANTE: ${{ inputs.variante }}
+        run: bash branding/apply.sh
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@49819abfb41bd9b44fb781159c033dba90353a7c # v1.0
+        with:
+          swap-size-gb: 12
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-gnu
+          components: "rustfmt"
+
+      - name: Save Rust toolchain version
+        run: |
+          RUST_TOOLCHAIN_VERSION=$(cargo --version | awk '{print $2}')
+          echo "RUST_TOOLCHAIN_VERSION=$RUST_TOOLCHAIN_VERSION" >> $GITHUB_ENV
+
+      - name: Disable rust bridge build
+        run: |
+          # only build cdylib
+          sed -i  "s/\[\"cdylib\", \"staticlib\", \"rlib\"\]/\[\"cdylib\"\]/g" Cargo.toml
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: /opt/artifacts/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        run: |
+          sudo apt install -y libva-dev
+          if ! $VCPKG_ROOT/vcpkg install --triplet x64-linux --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do echo "$_1:"; cat "$_1"; done
+            exit 1
+          fi
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+
+      # Compila num container Ubuntu 18.04 (glibc antiga): o .deb roda no
+      # Ubuntu 18.04+ e Debian 10+.
+      - uses: rustdesk-org/run-on-arch-action@d3fcfbb632b84cf7f6bc772bfaaa2c2f4f8789a8 # no release tag; commit 2026-05-26
+        name: Build rustdesk (.deb)
+        with:
+          arch: x86_64
+          distro: ubuntu18.04
+          githubToken: ${{ github.token }}
+          dockerRunArgs: |
+            --volume "${PWD}:/workspace"
+            --volume "/opt/artifacts:/opt/artifacts"
+          shell: /bin/bash
+          install: |
+            apt-get update -y
+            apt-get install -y \
+               build-essential clang cmake curl gcc git g++ \
+               libayatana-appindicator3-dev libasound2-dev libclang-10-dev \
+               libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgtk-3-dev \
+               libpulse-dev libva-dev libxcb-randr0-dev libxcb-shape0-dev \
+               libxcb-xfixes0-dev libxdo-dev libxfixes-dev llvm-10-dev nasm \
+               ninja-build pkg-config tree python3 unzip wget xz-utils libssl-dev
+            # libopus vem compilada pelo vcpkg
+            apt-get remove -y libopus-dev || true
+          run: |
+            set -e
+            git config --global --add safe.directory "*"
+            # rust (sem rustup: igual ao oficial)
+            pushd /opt
+            wget -O rust.tar.gz https://static.rust-lang.org/dist/rust-${{ env.RUST_TOOLCHAIN_VERSION }}-x86_64-unknown-linux-gnu.tar.gz
+            tar -zxf rust.tar.gz && rm rust.tar.gz
+            cd rust-${{ env.RUST_TOOLCHAIN_VERSION }}-x86_64-unknown-linux-gnu && ./install.sh > /dev/null
+            cd /opt && rm -rf rust-${{ env.RUST_TOOLCHAIN_VERSION }}-x86_64-unknown-linux-gnu
+            popd
+            mkdir -p ~/.cargo/
+            printf "[source.crates-io]\nregistry = 'https://github.com/rust-lang/crates.io-index'\n" > ~/.cargo/config
+            # biblioteca rust
+            pushd /workspace
+            export VCPKG_ROOT=/opt/artifacts/vcpkg
+            cargo build --locked --lib --features hwcodec,flutter,unix-file-copy-paste --release
+            rm -rf target/release/deps target/release/build
+            rm -rf ~/.cargo
+            popd
+            # flutter
+            pushd /opt
+            wget -q https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz
+            tar xf flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz
+            export PATH=/opt/flutter/bin:$PATH
+            flutter doctor -v
+            pushd /opt/flutter
+            git apply /workspace/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+            popd
+            popd
+            # .deb
+            pushd /workspace
+            export CARGO_INCREMENTAL=0
+            export DEB_ARCH=amd64
+            python3 ./build.py --flutter --skip-cargo
+            ls -l rustdesk*.deb
+
+      - name: Renomear e conferir o .deb
+        env:
+          VARIANTE: ${{ inputs.variante }}
+        run: |
+          set -euo pipefail
+          case "$VARIANTE" in
+            cliente) source branding/app.env ;;
+            tecnico) source branding/app-tecnico.env ;;
+            *) echo "::error::variante inválida"; exit 1 ;;
+          esac
+          sudo chown -R "$(id -u):$(id -g)" .
+          mkdir -p SaidaPersonalizada
+          DEB="SaidaPersonalizada/${OUT_NAME}-${VERSION}-amd64.deb"
+          mv "rustdesk-${VERSION}.deb" "$DEB"
+          dpkg-deb -I "$DEB" | sed -n '1,20p'
+          dpkg-deb -I "$DEB" | grep -q "Description: ${DESCRIPTION}" || { echo "::error::descrição do pacote sem a marca"; exit 1; }
+          dpkg-deb -c "$DEB" | grep -q 'usr/share/rustdesk/lib/librustdesk.so' || { echo "::error::librustdesk.so ausente no .deb"; exit 1; }
+          dpkg-deb --fsys-tarfile "$DEB" | tar -xO ./usr/share/applications/rustdesk.desktop | grep -qxF "Name=${PRODUCT}" || { echo "::error::atalho sem a marca"; exit 1; }
+          echo "ARTIFACT=${OUT_NAME}-linux-x64" >> "$GITHUB_ENV"
+          cd SaidaPersonalizada && sha256sum *.deb | tee SHA256SUMS.txt
+
+      - name: Upload .deb personalizado
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ./SaidaPersonalizada
+          if-no-files-found: error
+          retention-days: 14

@@ -136,6 +136,18 @@ replace_text "$F" \
 replace_text "$F" "decoration: const BoxDecoration(color: Color(0xFF2c8cff))," "decoration: const BoxDecoration(color: Color(0xFF00134B)),"
 replace_text flutter/lib/desktop/widgets/tabbar_widget.dart '"RustDesk",' "\"${PRODUCT}\","
 replace_text src/platform/windows.rs 'let caption = "RustDesk Output"' "let caption = \"${PRODUCT}\""
+# Linux (.deb): título da janela, atalho do menu, serviço e descrição do pacote.
+# O pacote e o binário continuam "rustdesk" (caminhos fixos no código e no
+# serviço systemd); só o que o usuário vê muda.
+replace_text flutter/linux/my_application.cc 'gtk_header_bar_set_title(header_bar, "rustdesk");' "gtk_header_bar_set_title(header_bar, \"${PRODUCT}\");"
+replace_text flutter/linux/my_application.cc 'gtk_window_set_title(window, "rustdesk");' "gtk_window_set_title(window, \"${PRODUCT}\");"
+replace_text res/rustdesk.desktop 'Name=RustDesk' "Name=${PRODUCT}"
+replace_text res/rustdesk.desktop 'Comment=Remote Desktop' "Comment=${DESCRIPTION}"
+replace_text res/rustdesk.desktop 'Name=Open a New Window' 'Name=Nova janela'
+replace_text res/rustdesk-link.desktop 'Name=RustDesk' "Name=${PRODUCT}"
+replace_text res/rustdesk.service 'Description=RustDesk' "Description=${PRODUCT}"
+replace_text build.py 'Homepage: https://rustdesk.com' "Homepage: ${SITE_URL}"
+replace_text build.py 'Description: A remote control software.' "Description: ${DESCRIPTION}"
 
 echo "== 3/6 metadados do executável"
 F=flutter/windows/runner/Runner.rc
@@ -184,6 +196,15 @@ cp -f "$O/logo.png"       flutter/assets/logo.png
 cp -f "$O/logo_light.png" flutter/assets/logo_light.png
 cp -f "$O/logo_dark.png"  flutter/assets/logo_dark.png
 cp -f "$O/label.png"      libs/portable/src/res/label.png
+# Linux: o menu prefere o .svg ao .png; o svg só embrulha o ícone 256 da marca
+python3 - "$O/256x256.png" res/scalable.svg <<'PY'
+import base64, sys
+b = base64.b64encode(open(sys.argv[1], "rb").read()).decode()
+open(sys.argv[2], "w", encoding="utf-8").write(
+    '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+    'width="256" height="256" viewBox="0 0 256 256">'
+    f'<image width="256" height="256" xlink:href="data:image/png;base64,{b}"/></svg>\n')
+PY
 rm -rf "$WORK"
 
 echo "== 6/6 conferência"
@@ -206,6 +227,8 @@ else
   grep -q 'OPC: senha temporária só muda ao reabrir' src/server/connection.rs || die "senha temporária fixa por execução"
 fi
 ! grep -q "rustdesk.com" flutter/lib/desktop/pages/desktop_setting_page.dart || die "link rustdesk.com restante na tela Sobre"
+grep -qxF "Name=${PRODUCT}" res/rustdesk.desktop || die "atalho Linux (.desktop)"
+grep -q 'data:image/png;base64,' res/scalable.svg || die "ícone Linux (.svg)"
 for f in res/icon.ico flutter/windows/runner/resources/app_icon.ico flutter/assets/logo.png libs/portable/src/res/label.png; do
   [[ -s "$f" ]] || die "arquivo vazio: $f"
 done

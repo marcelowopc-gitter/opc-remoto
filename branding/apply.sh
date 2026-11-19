@@ -76,7 +76,8 @@ replace_text "$F" \
 # segurança (o usuário não consegue mudar):
 #   - só senha temporária: senha fixa salva é ignorada (sem acesso permanente)
 #   - túnel TCP desligado (sem encaminhar portas para a rede do cliente)
-#   - sessão ociosa cai em ${IDLE_MIN} min
+#   - sem limite de ociosidade: a sessão só cai se o cliente fechar o app ou
+#     a conexão cair
 #   - aceite por senha ou por clique do cliente
 #   - terminal remoto (PowerShell/cmd) LIGADO; modo privacidade (tela preta no
 #     cliente), câmera, impressora remota e descoberta na LAN desligados
@@ -89,7 +90,6 @@ replace_text "$F" \
 #     cada acesso); fechar/reabrir o app gera senha nova
 #   - cliente: só aceita conexões vindas dos IPs de WHITELIST (app.env), ex.: o
 #     IP de saída do NOC/VPN. Vale também via relay (o IP checado é o do técnico).
-IDLE_MIN=15
 WL_ITEM=""
 if [[ "$VARIANTE" == "cliente" && -n "${WHITELIST:-}" ]]; then
   # só IPv4/IPv6 com máscara opcional, separados por vírgula
@@ -98,7 +98,7 @@ if [[ "$VARIANTE" == "cliente" && -n "${WHITELIST:-}" ]]; then
 fi
 replace_text "$F" \
   'pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
-  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"Y\"), (\"auto-disconnect-timeout\", \"${IDLE_MIN}\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"Y\"), (\"enable-privacy-mode\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")${WL_ITEM}].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
+  "pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"verification-method\", \"use-temporary-password\"), (\"enable-tunnel\", \"N\"), (\"allow-auto-disconnect\", \"N\"), (\"approve-mode\", \"password-click\"), (\"enable-terminal\", \"Y\"), (\"enable-privacy-mode\", \"N\"), (\"enable-camera\", \"N\"), (\"enable-remote-printer\", \"N\"), (\"enable-lan-discovery\", \"N\")${WL_ITEM}].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
 replace_text "$F" \
   'pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();' \
   "pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new([(\"disable-installation\", \"Y\"), (\"disable-account\", \"Y\"), (\"conn-type\", \"${CONN_TYPE}\")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect());"
@@ -110,7 +110,7 @@ fi
 # cliente: a senha temporária NÃO troca a cada acesso. Ela nasce quando o app
 # abre e só muda ao fechar/reabrir o app (ou após 10 senhas erradas seguidas,
 # proteção que continua no código). Assim o técnico reconecta com a mesma senha
-# se a sessão cair (ociosidade, rede); a whitelist do NOC segue valendo.
+# se a sessão cair (rede); a whitelist do NOC segue valendo.
 if [[ "$VARIANTE" == "cliente" ]]; then
   # o checkout no Windows pode vir com CRLF: casa \r?\n
   python3 - src/server/connection.rs <<'PY' || die "troca falhou em src/server/connection.rs (senha temporária)"
@@ -194,6 +194,7 @@ grep -q '"disable-installation", "Y"' libs/hbb_common/src/config.rs || die "HARD
 grep -q '"disable-account", "Y"' libs/hbb_common/src/config.rs || die "HARD_SETTINGS (login)"
 grep -q '"enable-terminal", "Y"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (terminal)"
 grep -q '"enable-privacy-mode", "N"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (privacidade)"
+grep -q '"allow-auto-disconnect", "N"' libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (sem limite de ociosidade)"
 if [[ -n "$WL_ITEM" ]]; then
   grep -qF "(\"whitelist\", \"${WHITELIST}\")" libs/hbb_common/src/config.rs || die "OVERWRITE_SETTINGS (whitelist)"
   echo "whitelist: ${WHITELIST}"

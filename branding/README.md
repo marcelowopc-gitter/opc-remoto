@@ -21,7 +21,8 @@ computador, e a máquina do técnico não pode ser acessada por ninguém.
   conferida; se o código mudar, o build falha cedo. Variante pela variável
   `VARIANTE` (padrão `cliente`).
   Segurança forçada (o usuário não altera): só senha temporária, tela de
-  Segurança oculta, túnel TCP desligado, sessão ociosa cai em 15 min, aceite por
+  Segurança oculta, túnel TCP desligado, sem limite de ociosidade (só cai se o cliente fechar
+  o app ou a conexão cair), aceite por
   senha ou clique, instalação como serviço bloqueada (só portátil), login/conta
   desligado, ID fixo, modo privacidade (tela preta no cliente), câmera,
   impressora remota e descoberta na rede local desligados, tipo de conexão fixo

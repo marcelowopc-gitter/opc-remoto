@@ -2,7 +2,15 @@
 
 Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`.
 
-## opc-1.5.3-r7 - 2026-11-18 (atual)
+## opc-1.5.3-r8 - 2026-11-19 (em teste)
+Base: RustDesk 1.5.3. Commit `__COMMIT__`. Só o app do cliente muda (técnico continua o r4:
+o limite de ociosidade é aplicado pelo lado que recebe a conexão).
+SHA-256 (cliente, site): `__SHA_CLIENTE__`
+- Sem limite de ociosidade: a sessão não cai mais após 15 min parada. Só cai
+  se o cliente fechar o app ou a conexão cair. A senha temporária continua a
+  mesma enquanto o app estiver aberto (r7), então dá para reconectar.
+
+## opc-1.5.3-r7 - 2026-11-18
 Base: RustDesk 1.5.3. Commit `1ddcaa5`. Só o app do cliente muda (técnico continua o r4).
 SHA-256 (cliente, site): `b9e784ec5a23b422b95f891244e67af6c341026862b923a3c2e8d55d03d92ab3`
 - Senha temporária fixa enquanto o app estiver aberto: não troca mais a cada

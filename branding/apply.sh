@@ -88,6 +88,8 @@ replace_text "$F" \
 #   - técnico: gravação automática de toda sessão de saída
 #   - cliente: senha temporária vale enquanto o app estiver aberto (não troca a
 #     cada acesso); fechar/reabrir o app gera senha nova
+#   - cliente: quando o TÉCNICO ENCERRA o atendimento, o app fecha (senha morre
+#     junto; novo atendimento = abrir de novo). Queda de rede não fecha (r7).
 #   - cliente: só aceita conexões vindas dos IPs de WHITELIST (app.env), ex.: o
 #     IP de saída do NOC/VPN. Vale também via relay (o IP checado é o do técnico).
 WL_ITEM=""
@@ -124,6 +126,84 @@ if n != 1:
 open(p, "w", encoding="utf-8", newline="").write(data)
 PY
   echo "  ok  src/server/connection.rs"
+  # cliente: o TÉCNICO ENCERROU a sessão (o app dele manda o aviso de fechamento)
+  # -> o app do cliente fecha e a senha temporária morre junto; para novo
+  # atendimento o cliente abre o programa de novo. Espera 10 s antes: se o técnico
+  # reconectou (o botão "Reconectar" também manda o aviso) ou ainda há outra
+  # janela autorizada aberta (arquivos, terminal), nada acontece.
+  # Queda de rede NÃO manda aviso: o app continua e o técnico reconecta com a
+  # mesma senha (r7). Windows: fecha o processo (é ele que atende as conexões).
+  # Linux: fecha a janela do app; o vigia do pacote desliga o serviço.
+  python3 - src/server/connection.rs <<'PY' || die "troca falhou em src/server/connection.rs (encerrar ao fim do atendimento)"
+import sys
+p = sys.argv[1]
+data = open(p, encoding="utf-8", newline="").read()
+nl = "\r\n" if "\r\n" in data else "\n"
+def troca(old, new):
+    global data
+    old, new = old.replace("\n", nl), new.replace("\n", nl)
+    n = data.count(old)
+    if n != 1:
+        sys.exit(f"esperava 1 ocorrência, achei {n}: {old[:70]!r}")
+    data = data.replace(old, new)
+troca('''                log::info!("receive close reason: {}", s);
+                self.on_close("Peer close", true).await;
+                raii::AuthedConnID::check_remove_session(self.inner.id(), self.session_key());
+                return false;''', '''                log::info!("receive close reason: {}", s);
+                // OPC: técnico encerrou uma sessão autorizada
+                let opc_encerrado = self.authorized;
+                self.on_close("Peer close", true).await;
+                raii::AuthedConnID::check_remove_session(self.inner.id(), self.session_key());
+                if opc_encerrado {
+                    opc_encerrar_se_sem_sessao();
+                }
+                return false;''')
+data = data.rstrip("\r\n") + nl + nl + '''// OPC (cliente): fim do atendimento. O técnico encerrou a sessão; se em 10 s não
+// houver nenhuma sessão autorizada (não reconectou, nenhuma outra janela aberta),
+// o app fecha e a senha temporária morre junto. Queda de rede não chama isto.
+fn opc_encerrar_se_sem_sessao() {
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+        let abertas = AUTHED_CONNS.lock().unwrap().len();
+        if abertas > 0 {
+            log::info!("OPC: ainda há {} sessão(ões) autorizada(s); o app continua", abertas);
+            return;
+        }
+        log::info!("OPC: atendimento encerrado pelo técnico; senha nova e app fechando");
+        password::update_temporary_password();
+        #[cfg(target_os = "linux")]
+        opc_fechar_janela_linux();
+        #[cfg(not(target_os = "linux"))]
+        std::process::exit(0);
+    });
+}
+
+// OPC (cliente Linux): fecha a janela do app (mesmo executável, sem argumento
+// "--"); o vigia do pacote vê a janela fechada e desliga o serviço.
+#[cfg(target_os = "linux")]
+fn opc_fechar_janela_linux() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(dir) = std::fs::read_dir("/proc") else { return };
+    for e in dir.flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|s| s.parse::<i32>().ok()) else {
+            continue;
+        };
+        if std::fs::read_link(format!("/proc/{}/exe", pid)).ok().as_deref() != Some(exe.as_path()) {
+            continue;
+        }
+        let cmd = std::fs::read(format!("/proc/{}/cmdline", pid)).unwrap_or_default();
+        let a1: &[u8] = cmd.split(|b| *b == 0).nth(1).unwrap_or_default();
+        if a1.starts_with(b"--") {
+            continue;
+        }
+        log::info!("OPC: fechando a janela do app (pid {})", pid);
+        let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
+    }
+}
+'''.replace("\n", nl)
+open(p, "w", encoding="utf-8", newline="").write(data)
+PY
+  echo "  ok  src/server/connection.rs (fim do atendimento fecha o app)"
 fi
 
 echo "== 2/6 textos fixos na interface"
@@ -204,6 +284,7 @@ if [[ "$VARIANTE" == "tecnico" ]]; then
   grep -q '"allow-auto-record-outgoing", "Y"' libs/hbb_common/src/config.rs || die "OVERWRITE_LOCAL_SETTINGS (gravação)"
 else
   grep -q 'OPC: senha temporária só muda ao reabrir' src/server/connection.rs || die "senha temporária fixa por execução"
+  grep -q 'opc_encerrar_se_sem_sessao();' src/server/connection.rs || die "fim do atendimento fecha o app"
 fi
 ! grep -q "rustdesk.com" flutter/lib/desktop/pages/desktop_setting_page.dart || die "link rustdesk.com restante na tela Sobre"
 for f in res/icon.ico flutter/windows/runner/resources/app_icon.ico flutter/assets/logo.png libs/portable/src/res/label.png; do

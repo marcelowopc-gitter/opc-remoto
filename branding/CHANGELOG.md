@@ -1,8 +1,22 @@
 # Histórico de versões - OPC Remoto
 
-Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`.
+Cada versão publicada no portal de suporte. O SHA-256 é o do exe em `/baixar`
+(e, a partir do r9, também o do .deb em `/baixar-linux`).
 
-## opc-1.5.3-r8 - 2026-11-19 (atual)
+## opc-1.5.3-r9 - 2026-11-26 (atual)
+Base: RustDesk 1.5.3. Commit `234dd93`. Só o app do cliente muda (técnico continua o r4).
+SHA-256 (cliente Windows, `/baixar`): `098c1aad5700ea36c2793768d0020d5ec0f11346f4d171e359006d82149dc8b6`
+SHA-256 (cliente Linux, `/baixar-linux`): `cc4007ba75435fd710b12c69eb44e12f45ee7d42a8d8ffd7216e1d37eb8f913a`
+- Fim do atendimento: quando o técnico encerra a sessão, o app do cliente fecha
+  sozinho (~10 s) e a senha morre junto; novo atendimento = abrir o programa de
+  novo. Queda de rede não fecha (o técnico reconecta com a mesma senha, r7).
+  "Reconectar" e fechar só a janela de arquivos/terminal também não fecham.
+- Primeira versão Linux publicada (Ubuntu/Debian, pacote `opcremoto`): acesso só
+  com o app aberto (serviço não sobe no boot). Workflow "OPC Remoto (Linux x64)".
+- Site: quadro "OPC Remoto Cliente" com Windows e Linux e passo a passo Linux;
+  área técnica (OPC Tecnico) visível e baixável só na rede do provedor.
+
+## opc-1.5.3-r8 - 2026-11-19
 Base: RustDesk 1.5.3. Commit `a10ae42`. Só o app do cliente muda (técnico continua o r4:
 o limite de ociosidade é aplicado pelo lado que recebe a conexão).
 SHA-256 (cliente, site): `79a1a1d0acc23492fb19d44c6ec5a62b38a9e9cd8ce48a4205193380df3907ea`

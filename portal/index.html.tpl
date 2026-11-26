@@ -63,6 +63,8 @@ main.wrap{margin-top:-64px;position:relative}
 .btns{display:flex;flex-direction:column;gap:10px}
 .btn.alt{background:transparent;color:var(--accent);border:2px solid var(--accent)}
 .btn.alt:hover{background:var(--surface-2)}
+.btns.mac{flex-direction:row;flex-wrap:wrap;margin:14px 0 16px}
+.btns.mac .btn{padding:12px 22px}
 .tut{margin:18px 0 0;background:var(--surface-2)}
 .tut summary{font-size:17px;padding:14px 18px}
 .tut ol{margin:0;padding-left:22px}
@@ -165,7 +167,7 @@ footer .hash{margin-top:6px;font:12px/1.7 Consolas,ui-monospace,monospace;word-b
   <div class="card">
     <div class="notice" id="naoWindows" role="note">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-      <div><b>Abra esta página no computador.</b> O atendimento funciona em computadores com Windows ou Linux (Ubuntu e Debian).</div>
+      <div><b>Abra esta página no computador.</b> O atendimento funciona em computadores com Windows, Mac ou Linux (Ubuntu e Debian).</div>
     </div>
     <div class="app">
       <img src="/img/icone-64.png" alt="" width="64" height="64">
@@ -175,9 +177,27 @@ footer .hash{margin-top:6px;font:12px/1.7 Consolas,ui-monospace,monospace;word-b
       </div>
       <div class="btns">
         <a class="btn" href="/baixar">Baixar para Windows</a>
+        <a class="btn alt" href="#mac" id="btnMac">Baixar para Mac</a>
         <a class="btn alt" href="/baixar-linux">Baixar para Linux</a>
       </div>
     </div>
+    <details class="tut" id="mac">
+      <summary>Usa Mac? Baixe aqui e veja como abrir</summary>
+      <div class="body">
+        <p class="nota">Escolha conforme o seu Mac. Não sabe qual é? Clique na <b>maçã</b> no canto de cima da tela e em <b>Sobre este Mac</b>: se aparecer <b>Chip Apple M1, M2, M3 ou M4</b>, use o primeiro botão; se aparecer <b>Processador Intel</b>, use o segundo.</p>
+        <div class="btns mac">
+          <a class="btn" href="/baixar-mac">Mac com chip Apple (M1 a M4)</a>
+          <a class="btn alt" href="/baixar-mac-intel">Mac com processador Intel</a>
+        </div>
+        <ol>
+          <li>Abra o arquivo <b>opc-remoto.dmg</b> da pasta <b>Downloads</b> e arraste o <b>OPC Remoto</b> para a pasta <b>Aplicativos</b>.</li>
+          <li>Abra o <b>OPC Remoto</b> em Aplicativos. Na primeira vez o Mac avisa que não pode verificar o programa: clique em <b>OK</b>, abra <b>Ajustes do Sistema &gt; Privacidade e Segurança</b>, desça até o fim e clique em <b>Abrir Mesmo Assim</b>. Em Macs mais antigos, clique no programa com o <b>botão direito</b> e escolha <b>Abrir</b>.</li>
+          <li>Para o técnico ver e usar a tela, libere o <b>OPC Remoto</b> em <b>Gravação de Tela</b> e em <b>Acessibilidade</b> (o programa mostra os botões para isso). Depois feche e abra o programa de novo.</li>
+          <li>Diga ao técnico o <b>ID</b> e a <b>Senha</b> que aparecem na tela.</li>
+        </ol>
+        <p class="nota">Só é preciso fazer isso uma vez. Nos próximos atendimentos, basta abrir o OPC Remoto em Aplicativos.</p>
+      </div>
+    </details>
     <details class="tut">
       <summary>Usa Linux? Veja como instalar</summary>
       <div class="body">
@@ -271,6 +291,8 @@ footer .hash{margin-top:6px;font:12px/1.7 Consolas,ui-monospace,monospace;word-b
       <div class="hash">
         SHA-256 Windows: __SHA__<br>
         SHA-256 Linux: __SHA_LINUX__<br>
+        SHA-256 Mac chip Apple: __SHA_MAC_ARM__<br>
+        SHA-256 Mac Intel: __SHA_MAC_X64__<br>
         OPC Remoto &middot; software livre (GNU AGPL-3.0) &middot; <a href="https://github.com/marcelowopc-gitter/opc-remoto">código-fonte</a>
       </div>
     </details>
@@ -281,10 +303,14 @@ footer .hash{margin-top:6px;font:12px/1.7 Consolas,ui-monospace,monospace;word-b
 (function () {
   try {
     var ua = navigator.userAgent || "";
-    var mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    var mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
     var windows = /Windows/i.test(ua);
     var linux = /Linux/i.test(ua) && !/Android/i.test(ua);
-    if (mobile || !(windows || linux)) document.getElementById("naoWindows").classList.add("show");
+    var mac = /Macintosh/i.test(ua) && !mobile;
+    if (mobile || !(windows || linux || mac)) document.getElementById("naoWindows").classList.add("show");
+    var det = document.getElementById("mac");
+    if (mac) det.open = true;
+    document.getElementById("btnMac").addEventListener("click", function () { det.open = true; });
   } catch (e) {}
 })();
 </script>

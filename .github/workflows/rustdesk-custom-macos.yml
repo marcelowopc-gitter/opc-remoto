@@ -9,6 +9,8 @@
 # USO: Actions -> "OPC Remoto (macOS)" -> Run workflow (branch custom-1.5.3)
 #   Artifacts: opc-remoto-macos-x86_64 (Mac Intel) e opc-remoto-macos-aarch64
 #   (Mac M1/M2/M3/M4), cada um com o .dmg + SHA256SUMS.
+#   Apple Silicon: macos-26 (o macos-14 foi aposentado pelo GitHub; o macos-15
+#   ficou sem máquina em 26/11/2026). Escolha em "runner_arm".
 #
 # Sem assinatura: o Mac bloqueia na 1a abertura (Ajustes > Privacidade e
 # Segurança > Abrir mesmo assim). O app precisa das permissões Gravação de Tela
@@ -33,9 +35,9 @@ on:
       runner_arm:
         description: "Máquina do GitHub para o build Apple Silicon (trocar se o job ficar sem máquina)"
         required: true
-        default: "macos-14"
+        default: "macos-26"
         type: choice
-        options: [macos-14, macos-15, macos-26]
+        options: [macos-26, macos-15]
 
 permissions:
   contents: read
@@ -97,15 +99,6 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
-
-      - name: Escolher Xcode 16 (macos-14)
-        if: ${{ matrix.job.os == 'macos-14' }}
-        run: |
-          set -euo pipefail
-          X="$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -1)"
-          [[ -n "$X" ]] || { echo "::error::Xcode 16 não encontrado no macos-14"; exit 1; }
-          sudo xcode-select -s "$X/Contents/Developer"
-          xcodebuild -version
 
       - name: Install build runtime
         run: |

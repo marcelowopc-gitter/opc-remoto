@@ -1,0 +1,273 @@
+# ============================================================================
+# OPC Remoto - macOS (.dmg, Intel e Apple Silicon) com servidor e key embutidos
+#
+# Baseado no job "build-for-macOS" do flutter-build.yml oficial da tag 1.5.3,
+# sem assinatura/notarização da Apple (build de TESTE). Só o app do CLIENTE.
+# Linha SEPARADA dos apps de Windows e Linux: usa branding/apply-macos.sh, que
+# roda o apply.sh sem alterações (mesmas travas) e só então ajusta o app do Mac.
+#
+# USO: Actions -> "OPC Remoto (macOS)" -> Run workflow (branch custom-1.5.3)
+#   Artifacts: opc-remoto-macos-x86_64 (Mac Intel) e opc-remoto-macos-aarch64
+#   (Mac M1/M2/M3/M4), cada um com o .dmg + SHA256SUMS.
+#
+# Sem assinatura: o Mac bloqueia na 1a abertura (Ajustes > Privacidade e
+# Segurança > Abrir mesmo assim). O app precisa das permissões Gravação de Tela
+# e Acessibilidade para o técnico ver e controlar.
+# ============================================================================
+name: OPC Remoto (macOS)
+run-name: "OPC cliente macOS (${{ github.ref_name }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Servidor de ID/relay (hbbs/hbbr)"
+        required: true
+        default: "hcy0887ak5r.sn.mynetname.net"
+        type: string
+      key:
+        description: "Key PÚBLICA do servidor (conteúdo de id_ed25519.pub; o padrão já é a key atual)"
+        required: true
+        default: "1meVSoScVQVPchUgDk1soBa5l3Os4iDoyBWvmpAdaFE="
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # valores copiados do flutter-build.yml da tag 1.5.3
+  MAC_RUST_VERSION: "1.81"
+  FLUTTER_VERSION: "3.24.5"
+  FLUTTER_MACOS_ARM_VERSION: "3.44.9"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  VERSION: "1.5.3"
+  EXPECTED_KEY_SHA256: "ccb9a4de382a5ac5fc7d9944c487b4798a5e9a7a6127a4a51aeee962772cbf6d"
+  APP_FINAL: "OPC Remoto.app"
+
+jobs:
+  validate-inputs:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Conferir host e key
+        env:
+          IN_HOST: ${{ inputs.host }}
+          IN_KEY: ${{ inputs.key }}
+        run: |
+          set -euo pipefail
+          KEY="$(printf '%s' "$IN_KEY" | tr -d ' \r\n')"
+          [[ "$IN_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "::error::host inválido"; exit 1; }
+          [[ "$KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || { echo "::error::formato de key inválido"; exit 1; }
+          GOT="$(printf '%s' "$KEY" | sha256sum | cut -d' ' -f1)"
+          if [[ "$GOT" != "$EXPECTED_KEY_SHA256" ]]; then
+            echo "::error::SHA-256 da key não confere (${GOT:0:12}...). Copie a key do arquivo, não digite."
+            exit 1
+          fi
+          echo "host e key conferidos (key sha256 ${GOT:0:12}...)"
+
+  generate-bridge:
+    needs: [validate-inputs]
+    uses: ./.github/workflows/bridge.yml
+
+  build-macos:
+    name: macos-${{ matrix.job.arch }}
+    runs-on: ${{ matrix.job.os }}
+    needs: [generate-bridge]
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - { target: x86_64-apple-darwin, os: macos-15-intel, extra-build-args: "", arch: x86_64, vcpkg-triplet: x64-osx }
+          - { target: aarch64-apple-darwin, os: macos-15, extra-build-args: "--screencapturekit", arch: aarch64, vcpkg-triplet: arm64-osx }
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Install build runtime
+        run: |
+          brew install llvm create-dmg gnu-sed coreutils
+          if command -v pkg-config &>/dev/null; then
+              echo "pkg-config is already installed"
+          else
+              brew install pkg-config
+          fi
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python3" -m pip install -q pillow
+
+      - name: Install NASM
+        run: |
+          # NASM 2.16.x (não usar brew: instala o 3.x, incompatível)
+          wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
+          unzip nasm-2.16.03-macosx.zip
+          sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
+          nasm --version
+
+      # ---- PERSONALIZAÇÃO: servidor e key embutidos ---------------------------
+      - name: Embutir servidor e key (hbb_common/src/config.rs)
+        env:
+          IN_HOST: ${{ inputs.host }}
+          IN_KEY: ${{ inputs.key }}
+        run: |
+          set -euo pipefail
+          export PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+          F=libs/hbb_common/src/config.rs
+          KEY="$(printf '%s' "$IN_KEY" | tr -d ' \r\n')"
+          grep -q '^pub const RENDEZVOUS_SERVERS: &\[&str\] = &\["rs-ny.rustdesk.com"\];$' "$F" \
+            || { echo "::error::linha RENDEZVOUS_SERVERS não encontrada (versão diferente?)"; exit 1; }
+          grep -q '^pub const RS_PUB_KEY: &str = ".*";$' "$F" \
+            || { echo "::error::linha RS_PUB_KEY não encontrada (versão diferente?)"; exit 1; }
+          sed -i -E "s|^pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[\"rs-ny.rustdesk.com\"\];$|pub const RENDEZVOUS_SERVERS: \&[\&str] = \&[\"${IN_HOST}\"];|" "$F"
+          sed -i -E "s|^pub const RS_PUB_KEY: &str = \".*\";$|pub const RS_PUB_KEY: \&str = \"${KEY}\";|" "$F"
+          grep -n '^pub const RENDEZVOUS_SERVERS' "$F"
+          GOT="$(sed -n 's/^pub const RS_PUB_KEY: &str = "\(.*\)";$/\1/p' "$F" | tr -d '\r')"
+          [[ "$(printf '%s' "$GOT" | sha256sum | cut -d' ' -f1)" == "$EXPECTED_KEY_SHA256" ]] \
+            || { echo "::error::key gravada no código não confere"; exit 1; }
+          grep -q "\"${IN_HOST}\"" "$F" || { echo "::error::host não gravado"; exit 1; }
+          echo "config.rs personalizado (host ${IN_HOST}, key conferida)"
+
+      - name: Install flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ matrix.job.arch == 'aarch64' && env.FLUTTER_MACOS_ARM_VERSION || env.FLUTTER_VERSION }}
+
+      - name: Keep CocoaPods for Flutter 3.44 (arm64)
+        if: ${{ matrix.job.arch == 'aarch64' }}
+        run: flutter config --no-enable-swift-package-manager
+
+      - name: Patch flutter
+        if: ${{ matrix.job.arch == 'x86_64' }}
+        run: |
+          cd $(dirname $(dirname $(which flutter)))
+          if [[ "3.24.5" == ${{env.FLUTTER_VERSION}} ]]; then
+            git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+          fi
+
+      - name: Workaround for flutter issue
+        shell: bash
+        run: |
+          cd "$(dirname "$(which flutter)")"
+          # https://github.com/flutter/flutter/issues/133533
+          sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
+          grep -n '_setFramesEnabledState(false);' ../packages/flutter/lib/src/scheduler/binding.dart
+
+      - name: Patch RustDesk sources for Flutter 3.44 (arm64)
+        if: ${{ matrix.job.arch == 'aarch64' }}
+        shell: bash
+        run: |
+          export PATH="$(brew --prefix gnu-sed)/libexec/gnubin:$PATH"
+          bash .github/patches/apply_flutter_3.44_source_patches.sh
+
+      # ---- PERSONALIZAÇÃO: marca e travas ---------------------------------------
+      # apply-macos.sh roda o apply.sh (mesmas travas do Windows, sem alterá-lo)
+      # e depois troca só o que existe no app do Mac.
+      - name: Aplicar marca macOS (branding/apply-macos.sh)
+        env:
+          VARIANTE: cliente
+        run: |
+          export PATH="$RUNNER_TEMP/venv/bin:$(brew --prefix gnu-sed)/libexec/gnubin:$(brew --prefix coreutils)/libexec/gnubin:$PATH"
+          bash branding/apply-macos.sh
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.MAC_RUST_VERSION }}
+          targets: ${{ matrix.job.target }}
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: opc-${{ matrix.job.os }}
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ matrix.job.arch == 'aarch64' && 'bridge-artifact-flutter-3.44' || 'bridge-artifact' }}
+          path: ./
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              cat "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+
+      - name: Build rustdesk
+        run: |
+          if [ "${{ matrix.job.target }}" = "aarch64-apple-darwin" ]; then
+            MIN_MACOS_VERSION="12.3"
+            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}/" build.py
+            sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN_MACOS_VERSION}'/" flutter/macos/Podfile
+            sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN_MACOS_VERSION}\"/" Cargo.toml
+            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN_MACOS_VERSION};/" flutter/macos/Runner.xcodeproj/project.pbxproj
+            echo "MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}" >> "$GITHUB_ENV"
+          fi
+          ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}
+
+      # ---- PERSONALIZAÇÃO: nome final, assinatura local (ad-hoc) e conferência --
+      - name: Renomear, assinar ad-hoc e conferir o app
+        run: |
+          set -euo pipefail
+          cd flutter/build/macos/Build/Products/Release
+          [[ -d RustDesk.app ]] || { echo "::error::RustDesk.app não foi gerado"; exit 1; }
+          rm -rf "$APP_FINAL"
+          mv RustDesk.app "$APP_FINAL"
+          # o build.py copia o binário "service" depois do flutter build, o que
+          # invalida a assinatura do pacote; sem isso o Mac M1+ diz "danificado".
+          codesign --force --deep -s - "$APP_FINAL"
+          codesign --verify --deep --strict --verbose=2 "$APP_FINAL"
+          P="$APP_FINAL/Contents/Info.plist"
+          NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$P")"
+          BID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$P")"
+          echo "CFBundleName=$NAME  CFBundleIdentifier=$BID"
+          [[ "$NAME" == "OPC Remoto" ]] || { echo "::error::nome do app errado: $NAME"; exit 1; }
+          [[ "$BID" == "br.com.opcaotelecom.opcremoto" ]] || { echo "::error::bundle id errado: $BID"; exit 1; }
+          HIT="$(grep -rl --binary-files=binary "${{ inputs.host }}" "$APP_FINAL/Contents" | head -3 || true)"
+          [[ -n "$HIT" ]] || { echo "::error::servidor não encontrado nos binários do app"; exit 1; }
+          echo "servidor embutido em: $HIT"
+          lipo -archs "$APP_FINAL/Contents/MacOS/"* 2>/dev/null || true
+          du -sh "$APP_FINAL"
+
+      - name: Criar .dmg
+        run: |
+          set -euo pipefail
+          CREATE_DMG="$(command -v create-dmg)"
+          CREATE_DMG="$(readlink -f "$CREATE_DMG")"
+          sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
+          mkdir -p SaidaPersonalizada
+          OUT="SaidaPersonalizada/opc-remoto-${VERSION}-${{ matrix.job.arch }}.dmg"
+          create-dmg --volname "OPC Remoto" --icon "$APP_FINAL" 200 190 --hide-extension "$APP_FINAL" \
+            --window-size 800 400 --app-drop-link 600 185 "$OUT" "./flutter/build/macos/Build/Products/Release/$APP_FINAL"
+          cd SaidaPersonalizada
+          shasum -a 256 *.dmg | tee SHA256SUMS.txt
+          ls -la
+
+      - name: Upload .dmg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: opc-remoto-macos-${{ matrix.job.arch }}
+          path: SaidaPersonalizada/
+          if-no-files-found: error
